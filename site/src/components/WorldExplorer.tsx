@@ -6,21 +6,36 @@ interface GridPosition {
   y: number
 }
 
+interface SceneData {
+  modelPath: string
+  rotation?: [number, number, number]
+}
+
 interface WorldGrid {
-  [key: string]: string // key format: "x,y" -> modelPath
+  [key: string]: SceneData // key format: "x,y" -> SceneData
 }
 
 export default function WorldExplorer() {
   const [currentPosition, setCurrentPosition] = useState<GridPosition>({ x: 0, y: 0 })
   const [worldGrid, setWorldGrid] = useState<WorldGrid>({
-    '0,0': '/scene-0-0.glb', // Initial position with the first model
-    '0,1': '/scene-0-1.glb', // Second position with the second model
+    '0,0': {
+      modelPath: '/scene-0-0.glb',
+      rotation: [Math.PI/2, 0, 0] // Flip upside down to right-side up
+    },
+    '0,1': {
+      modelPath: '/scene-0-1.glb',
+      rotation: [Math.PI/2, 0, 0] // Flip upside down to right-side up
+    },
+    '-1,0': {
+      modelPath: '/scene--1-0.glb',
+      rotation: [Math.PI/2, 0, 0] // Flip upside down to right-side up
+    },
   })
   const [isLoading, setIsLoading] = useState(false)
 
   const getPositionKey = (pos: GridPosition): string => `${pos.x},${pos.y}`
 
-  const getCurrentModel = (): string | null => {
+  const getCurrentSceneData = (): SceneData | null => {
     const key = getPositionKey(currentPosition)
     return worldGrid[key] || null
   }
@@ -54,13 +69,17 @@ export default function WorldExplorer() {
     moveToPosition(newPos)
   }
 
-  const currentModel = getCurrentModel()
+  const currentSceneData = getCurrentSceneData()
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
       {/* 3D Scene or Placeholder */}
-      {currentModel ? (
-        <Scene3D key={getPositionKey(currentPosition)} modelPath={currentModel} />
+      {currentSceneData ? (
+        <Scene3D
+          key={getPositionKey(currentPosition)}
+          modelPath={currentSceneData.modelPath}
+          rotation={currentSceneData.rotation}
+        />
       ) : (
         <div
           style={{
@@ -208,7 +227,7 @@ export default function WorldExplorer() {
       </div>
 
       {/* Position Display - only show when in a 3D scene */}
-      {currentModel && (
+      {currentSceneData && (
         <div
           style={{
             position: 'absolute',
