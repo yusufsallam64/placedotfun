@@ -1,0 +1,29 @@
+# Core dependencies (already in environment.yml)
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.20.0
+pillow>=9.0.0
+scipy>=1.10.0
+
+# ZoeDepth dependencies
+timm==0.9.16
+matplotlib>=3.6.0
+opencv-python>=4.6.0
+h5py>=3.7.0
+tqdm>=4.64.0
+
+# 3D mesh processing
+trimesh>=4.0.0
+
+# FastAPI and server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# HTTP utilities
+requests>=2.31.0
+certifi>=2023.0.0
+
+# Optional but recommended
+python-dotenv>=1.0.0
+
