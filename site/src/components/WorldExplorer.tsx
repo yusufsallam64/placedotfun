@@ -30,6 +30,8 @@ export default function WorldExplorer() {
   const [cameraRotation, setCameraRotation] = useState<THREE.Euler | null>(null)
   const [showPromptModal, setShowPromptModal] = useState(false)
   const [userPrompt, setUserPrompt] = useState('')
+  const [referenceImage, setReferenceImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [pendingPosition, setPendingPosition] = useState<GridPosition | null>(null)
   const [previousPosition, setPreviousPosition] = useState<GridPosition>({ x: 0, y: 0 })
   const [isTransitioning, setIsTransitioning] = useState(false)
@@ -135,8 +137,48 @@ export default function WorldExplorer() {
     })
   }, [currentPosition, worldGrid, preloadedScenes])
 
+  // Handle image upload
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Validate file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024 // 10MB in bytes
+      if (file.size > maxSize) {
+        alert('Image file is too large. Please upload an image smaller than 10MB.')
+        e.target.value = '' // Reset input
+        return
+      }
+
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please upload a valid image file.')
+        e.target.value = '' // Reset input
+        return
+      }
+
+      console.log(`[WorldExplorer] Image selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`)
+      
+      setReferenceImage(file)
+      // Create preview URL
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string)
+      }
+      reader.onerror = () => {
+        console.error('[WorldExplorer] Failed to read image file')
+        alert('Failed to read image file. Please try another image.')
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const removeImage = () => {
+    setReferenceImage(null)
+    setImagePreview(null)
+  }
+
   // Generate scene for unmapped positions
-  const generateScene = async (position: GridPosition, customPrompt?: string) => {
+  const generateScene = async (position: GridPosition, customPrompt?: string, refImage?: File | null) => {
     const key = getPositionKey(position)
 
     // Check if already in queue or already generated
@@ -154,7 +196,35 @@ export default function WorldExplorer() {
       if (customPrompt) {
         console.log(`[WorldExplorer] With custom prompt: "${customPrompt}"`)
       }
+      if (refImage) {
+        console.log(`[WorldExplorer] With reference image: ${refImage.name}`)
+      }
 
+      // Convert image to base64 if provided
+      let imageBase64: string | undefined
+      if (refImage) {
+        try {
+          console.log(`[WorldExplorer] Converting image to base64...`)
+          const reader = new FileReader()
+          imageBase64 = await new Promise<string>((resolve, reject) => {
+            reader.onloadend = () => {
+              const result = reader.result as string
+              console.log(`[WorldExplorer] Base64 conversion complete (length: ${result.length})`)
+              resolve(result)
+            }
+            reader.onerror = () => {
+              console.error('[WorldExplorer] FileReader error:', reader.error)
+              reject(new Error('Failed to read image file'))
+            }
+            reader.readAsDataURL(refImage)
+          })
+        } catch (imageError) {
+          console.error('[WorldExplorer] Failed to convert image:', imageError)
+          throw new Error('Failed to process reference image. Please try a different image.')
+        }
+      }
+
+      console.log(`[WorldExplorer] Sending generation request...`)
       const response = await fetch('/api/generate-scene', {
         method: 'POST',
         headers: {
@@ -164,12 +234,14 @@ export default function WorldExplorer() {
           x: position.x,
           y: position.y,
           userPrompt: customPrompt || undefined,
+          referenceImage: imageBase64 || undefined,
         }),
       })
 
       const data = await response.json()
 
       if (!response.ok || !data.success) {
+        console.error('[WorldExplorer] Generation failed:', data.error)
         throw new Error(data.error || 'Failed to generate scene')
       }
 
@@ -295,20 +367,24 @@ export default function WorldExplorer() {
   const handlePromptSubmit = () => {
     if (pendingPosition) {
       setShowPromptModal(false)
-      generateScene(pendingPosition, userPrompt.trim() || undefined)
+      generateScene(pendingPosition, userPrompt.trim() || undefined, referenceImage)
       setPendingPosition(null)
       setUserPrompt('')
+      setReferenceImage(null)
+      setImagePreview(null)
     }
   }
 
   const handlePromptCancel = () => {
     setShowPromptModal(false)
     if (pendingPosition) {
-      // Generate with no custom prompt
-      generateScene(pendingPosition)
+      // Generate with no custom prompt but possibly with reference image
+      generateScene(pendingPosition, undefined, referenceImage)
       setPendingPosition(null)
     }
     setUserPrompt('')
+    setReferenceImage(null)
+    setImagePreview(null)
   }
 
   const currentSceneData = getCurrentSceneData()
@@ -415,7 +491,7 @@ export default function WorldExplorer() {
                 color: 'white',
                 resize: 'vertical',
                 fontFamily: 'inherit',
-                marginBottom: '24px',
+                marginBottom: '16px',
               }}
               autoFocus
               onKeyDown={(e) => {
@@ -424,6 +500,117 @@ export default function WorldExplorer() {
                 }
               }}
             />
+            
+            {/* Image Upload Section */}
+            <div style={{ marginBottom: '24px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#ddd',
+                  marginBottom: '8px',
+                }}
+              >
+                Reference Image (Optional)
+              </label>
+              <p
+                style={{
+                  fontSize: '13px',
+                  color: '#999',
+                  marginBottom: '12px',
+                  lineHeight: '1.5',
+                }}
+              >
+                Upload an image to inspire the panoramic generation. Elements and lighting from your image will be incorporated.
+              </p>
+              
+              {imagePreview ? (
+                <div
+                  style={{
+                    position: 'relative',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    border: '2px solid rgba(255, 255, 255, 0.2)',
+                  }}
+                >
+                  <img
+                    src={imagePreview}
+                    alt="Reference preview"
+                    style={{
+                      width: '100%',
+                      height: 'auto',
+                      maxHeight: '200px',
+                      objectFit: 'cover',
+                      display: 'block',
+                    }}
+                  />
+                  <button
+                    onClick={removeImage}
+                    style={{
+                      position: 'absolute',
+                      top: '8px',
+                      right: '8px',
+                      padding: '8px 12px',
+                      fontSize: '14px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: 'rgba(220, 38, 38, 0.9)',
+                      color: 'white',
+                      cursor: 'pointer',
+                      fontWeight: '500',
+                      transition: 'all 0.2s',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(220, 38, 38, 1)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(220, 38, 38, 0.9)'
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '24px',
+                    borderRadius: '8px',
+                    border: '2px dashed rgba(255, 255, 255, 0.3)',
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.5)'
+                    e.currentTarget.style.background = 'rgba(0, 0, 0, 0.3)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                    e.currentTarget.style.background = 'rgba(0, 0, 0, 0.2)'
+                  }}
+                >
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    style={{ display: 'none' }}
+                  />
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '32px', marginBottom: '8px' }}>📸</div>
+                    <div style={{ fontSize: '14px', color: '#bbb', fontWeight: '500' }}>
+                      Click to upload an image
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#777', marginTop: '4px' }}>
+                      PNG, JPG, WEBP up to 10MB
+                    </div>
+                  </div>
+                </label>
+              )}
+            </div>
             <div
               style={{
                 display: 'flex',
@@ -436,6 +623,8 @@ export default function WorldExplorer() {
                   setShowPromptModal(false)
                   setPendingPosition(null)
                   setUserPrompt('')
+                  setReferenceImage(null)
+                  setImagePreview(null)
                   // Navigate back to a discovered position
                   const discovered = Array.from(discoveredPositions)
                   const validPositions = discovered.filter(key => worldGrid[key] && key !== getPositionKey(currentPosition))

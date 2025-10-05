@@ -9,6 +9,15 @@ import { saveChunk } from '@/lib/chunkService';
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000; // 2 seconds
 
+// Increase body size limit to 50MB to handle base64 images
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
+  },
+};
+
 interface GenerateSceneResponse {
   success: boolean;
   modelUrl?: string;
@@ -59,6 +68,7 @@ async function generateSceneWithRetry(
   x: number,
   y: number,
   userPrompt?: string,
+  referenceImageBase64?: string,
   retryCount: number = 0
 ): Promise<{ modelUrl: string; chunkId: string; retries: number }> {
   const tempFiles: string[] = [];
@@ -90,7 +100,44 @@ async function generateSceneWithRetry(
     const tempDir = os.tmpdir();
     console.log(`[generate-scene] Calling Gemini to generate panorama...`);
 
-    const panoramicResult = await makePanoramic(tempDir, undefined, prompt);
+    // Handle reference image if provided
+    let referenceImagePath: string | undefined;
+    if (referenceImageBase64) {
+      try {
+        console.log(`[generate-scene] Processing reference image... (length: ${referenceImageBase64.length})`);
+        
+        // Extract base64 data (remove data:image/xxx;base64, prefix if present)
+        const base64Match = referenceImageBase64.match(/^data:image\/(\w+);base64,(.+)$/);
+        let base64Data: string;
+        let extension: string;
+        
+        if (base64Match) {
+          extension = base64Match[1];
+          base64Data = base64Match[2];
+          console.log(`[generate-scene] Detected image format: ${extension}`);
+        } else {
+          // Assume it's already just base64 without prefix
+          base64Data = referenceImageBase64;
+          extension = 'jpg';
+          console.log(`[generate-scene] No data URI prefix found, assuming raw base64`);
+        }
+        
+        // Decode base64
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        console.log(`[generate-scene] Decoded image buffer size: ${imageBuffer.length} bytes`);
+        
+        // Save to temp file
+        referenceImagePath = `${tempDir}/ref_${Date.now()}.${extension}`;
+        fs.writeFileSync(referenceImagePath, imageBuffer);
+        tempFiles.push(referenceImagePath);
+        console.log(`[generate-scene] Reference image saved to:`, referenceImagePath);
+      } catch (imageError) {
+        console.error(`[generate-scene] Failed to process reference image:`, imageError);
+        throw new Error(`Failed to process reference image: ${imageError instanceof Error ? imageError.message : 'Unknown error'}`);
+      }
+    }
+
+    const panoramicResult = await makePanoramic(tempDir, referenceImagePath, prompt);
     tempFiles.push(panoramicResult.filePath);
     console.log(`[generate-scene] Panorama generated:`, panoramicResult.filePath);
 
@@ -157,7 +204,7 @@ async function generateSceneWithRetry(
     if (retryCount < MAX_RETRIES - 1) {
       console.log(`[generate-scene] Retrying in ${RETRY_DELAY}ms...`);
       await delay(RETRY_DELAY);
-      return generateSceneWithRetry(x, y, userPrompt, retryCount + 1);
+      return generateSceneWithRetry(x, y, userPrompt, referenceImageBase64, retryCount + 1);
     }
 
     throw error;
@@ -183,7 +230,7 @@ export default async function handler(
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  const { x, y, userPrompt } = req.body;
+  const { x, y, userPrompt, referenceImage } = req.body;
 
   // Validate coordinates
   if (typeof x !== 'number' || typeof y !== 'number') {
@@ -201,8 +248,16 @@ export default async function handler(
     });
   }
 
+  // Validate referenceImage if provided
+  if (referenceImage !== undefined && typeof referenceImage !== 'string') {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid referenceImage. Must be a base64 string.',
+    });
+  }
+
   try {
-    const { modelUrl, chunkId, retries } = await generateSceneWithRetry(x, y, userPrompt);
+    const { modelUrl, chunkId, retries } = await generateSceneWithRetry(x, y, userPrompt, referenceImage);
 
     res.status(200).json({
       success: true,
