@@ -10,6 +10,9 @@ export default function DepthPage() {
   const [processingType, setProcessingType] = useState<'depth' | '3d' | 'panorama'>('3d');
   const [usePanoramaAI, setUsePanoramaAI] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
+  const [saveToWorld, setSaveToWorld] = useState(true);
+  const [chunkX, setChunkX] = useState(0);
+  const [chunkZ, setChunkZ] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,6 +132,7 @@ export default function DepthPage() {
         type: '3d',
         panorama: usePanoramaAI.toString(),
         ...(usePanoramaAI && customPrompt && { prompt: customPrompt }),
+        ...(saveToWorld && { saveToWorld: 'true', x: chunkX.toString(), z: chunkZ.toString() }),
       });
 
       const response = await fetch(`/api/space?${params}`, {
@@ -144,6 +148,9 @@ export default function DepthPage() {
       // Get metadata from headers
       const vertices = response.headers.get('X-Vertices');
       const faces = response.headers.get('X-Faces');
+      const chunkId = response.headers.get('X-Chunk-Id');
+      const savedX = response.headers.get('X-Chunk-X');
+      const savedZ = response.headers.get('X-Chunk-Z');
       
       // Download the GLB file
       const blob = await response.blob();
@@ -156,7 +163,11 @@ export default function DepthPage() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      alert(`3D space created!\nVertices: ${vertices || 'N/A'}\nFaces: ${faces || 'N/A'}`);
+      let message = `3D space created!\nVertices: ${vertices || 'N/A'}\nFaces: ${faces || 'N/A'}`;
+      if (chunkId) {
+        message += `\n\n✅ Saved to world at (${savedX}, ${savedZ})`;
+      }
+      alert(message);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create 3D space');
       console.error('Error:', err);
@@ -267,6 +278,66 @@ export default function DepthPage() {
                       </p>
                     </div>
                   )}
+                  
+                  {/* World Persistence Options */}
+                  <div className="p-3 bg-gradient-to-r from-green-900/30 to-blue-900/30 rounded-lg border border-green-500/30">
+                    <div className="flex items-center gap-3 mb-3">
+                      <input
+                        type="checkbox"
+                        id="saveToWorld"
+                        checked={saveToWorld}
+                        onChange={(e) => setSaveToWorld(e.target.checked)}
+                        className="w-5 h-5 rounded border-gray-600 text-green-600 focus:ring-green-500 focus:ring-offset-gray-800"
+                      />
+                      <label htmlFor="saveToWorld" className="text-sm cursor-pointer">
+                        <span className="font-medium text-green-400">🌍 Save to Persistent World</span>
+                        <span className="block text-xs text-gray-400 mt-1">
+                          Add this chunk to the shared world that all users can see
+                        </span>
+                      </label>
+                    </div>
+                    
+                    {saveToWorld && (
+                      <div className="pl-8 space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label htmlFor="chunkX" className="block text-xs font-medium mb-1 text-gray-300">
+                              Chunk X
+                            </label>
+                            <input
+                              type="number"
+                              id="chunkX"
+                              value={chunkX}
+                              onChange={(e) => setChunkX(parseInt(e.target.value) || 0)}
+                              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="chunkZ" className="block text-xs font-medium mb-1 text-gray-300">
+                              Chunk Z
+                            </label>
+                            <input
+                              type="number"
+                              id="chunkZ"
+                              value={chunkZ}
+                              onChange={(e) => setChunkZ(parseInt(e.target.value) || 0)}
+                              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-400">
+                          Position in world grid. (0,0) is spawn. Each chunk is ~10 units.
+                        </p>
+                        <a
+                          href="/world"
+                          target="_blank"
+                          className="inline-block text-xs text-green-400 hover:text-green-300 underline"
+                        >
+                          View World Map →
+                        </a>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

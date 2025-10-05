@@ -23,21 +23,8 @@ const MAX_DISTANCE = 2.5 // Configurable boundary distance
 export default function WorldExplorer() {
   const [currentPosition, setCurrentPosition] = useState<GridPosition>({ x: 0, y: 0 })
   const [discoveredPositions, setDiscoveredPositions] = useState<Set<string>>(new Set(['0,0']))
-  const [worldGrid, setWorldGrid] = useState<WorldGrid>({
-    '0,0': {
-      modelPath: '/scene-0-0.glb',
-      rotation: [Math.PI/2, 0, 0] // Flip upside down to right-side up
-    },
-    '0,1': {
-      modelPath: '/scene-0-1.glb',
-      rotation: [Math.PI/2, 0, 0] // Flip upside down to right-side up
-    },
-    '-1,0': {
-      modelPath: '/scene--1-0.glb',
-      rotation: [Math.PI/2, 0, 0] // Flip upside down to right-side up
-    },
-  })
-  const [isLoading, setIsLoading] = useState(false)
+  const [worldGrid, setWorldGrid] = useState<WorldGrid>({})
+  const [isLoading, setIsLoading] = useState(true) // Start as loading while fetching chunks
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [cameraRotation, setCameraRotation] = useState<THREE.Euler | null>(null)
@@ -53,6 +40,61 @@ export default function WorldExplorer() {
   const generationQueueRef = useRef<Set<string>>(new Set())
 
   const getPositionKey = (pos: GridPosition): string => `${pos.x},${pos.y}`
+
+  // Load existing chunks from MongoDB on mount
+  useEffect(() => {
+    async function loadChunks() {
+      try {
+        // Start with hardcoded local chunks
+        const grid: WorldGrid = {
+          '0,0': {
+            modelPath: '/scene-0-0.glb',
+            rotation: [Math.PI / 2, 0, 0],
+          },
+          '0,1': {
+            modelPath: '/scene-0-1.glb',
+            rotation: [Math.PI / 2, 0, 0],
+          },
+        }
+        const discovered = new Set<string>(['0,0', '0,1'])
+
+        // Load additional chunks from database
+        console.log('[WorldExplorer] Loading chunks from database...')
+        const response = await fetch('/api/chunks?limit=100')
+        if (!response.ok) {
+          throw new Error('Failed to fetch chunks')
+        }
+
+        const chunks = await response.json()
+        console.log(`[WorldExplorer] Loaded ${chunks.length} chunks from database`)
+
+        for (const chunk of chunks) {
+          const key = `${chunk.position.x},${chunk.position.z}`
+
+          // Skip (0,0) and (0,1) - we use local files for these
+          if (key === '0,0' || key === '0,1') {
+            console.log(`[WorldExplorer] Skipping ${key} - using local file`)
+            continue
+          }
+
+          grid[key] = {
+            modelPath: chunk.modelUrl,
+            rotation: [Math.PI / 2, 0, 0],
+          }
+          discovered.add(key)
+        }
+
+        setWorldGrid(grid)
+        setDiscoveredPositions(discovered)
+      } catch (error) {
+        console.error('[WorldExplorer] Failed to load chunks:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadChunks()
+  }, [])
 
   const getCurrentSceneData = (): SceneData | null => {
     const key = getPositionKey(currentPosition)
@@ -131,13 +173,13 @@ export default function WorldExplorer() {
         throw new Error(data.error || 'Failed to generate scene')
       }
 
-      console.log(`[WorldExplorer] Scene generated successfully:`, data.filename)
+      console.log(`[WorldExplorer] Scene generated successfully:`, data.modelUrl)
 
       // Add to world grid with proper rotation
       setWorldGrid((prev) => ({
         ...prev,
         [key]: {
-          modelPath: `/${data.filename}`,
+          modelPath: data.modelUrl, // Use S3 URL from response
           rotation: [Math.PI / 2, 0, 0], // Apply consistent rotation
         },
       }))

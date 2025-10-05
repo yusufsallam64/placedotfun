@@ -1,10 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import formidable from 'formidable';
 import fs from 'fs';
-import path from 'path';
 import os from 'os';
 import { imageToGLB, getDepthMap } from '@/lib/zoedepth';
 import { makePanoramic } from '@/lib/gemini';
+import { saveChunk } from '@/lib/chunkService';
 
 export const config = {
   api: {
@@ -37,14 +37,17 @@ export default async function handler(
     const type = req.query.type as string || 'depth';
     const usePanorama = req.query.panorama === 'true';
     const userPrompt = req.query.prompt as string || '';
+    const saveToWorld = req.query.saveToWorld === 'true';
+    const chunkX = req.query.x ? parseInt(req.query.x as string) : 0;
+    const chunkZ = req.query.z ? parseInt(req.query.z as string) : 0;
 
     if (type === 'panorama') {
       // Panorama Conversion Only
       console.log('Converting to panoramic...', userPrompt ? `with custom prompt: "${userPrompt}"` : '');
       const tempDir = os.tmpdir();
-      
+
       try {
-        const panoramicResult = await makePanoramic(file.filepath, tempDir, userPrompt);
+        const panoramicResult = await makePanoramic(tempDir, file.filepath, userPrompt);
         tempFiles.push(panoramicResult.filePath);
         
         // Read the panoramic image
@@ -68,9 +71,9 @@ export default async function handler(
       if (usePanorama) {
         console.log('Converting to panoramic...', userPrompt ? `with custom prompt: "${userPrompt}"` : '');
         const tempDir = os.tmpdir();
-        
+
         try {
-          const panoramicResult = await makePanoramic(file.filepath, tempDir, userPrompt);
+          const panoramicResult = await makePanoramic(tempDir, file.filepath, userPrompt);
           processPath = panoramicResult.filePath;
           tempFiles.push(processPath);
           console.log('Panoramic conversion complete');
@@ -93,6 +96,33 @@ export default async function handler(
           edgeThreshold: 0.15,
         }
       );
+
+      // Save to persistent world if requested
+      let chunkId: string | undefined;
+      if (saveToWorld) {
+        try {
+          console.log(`Saving chunk at position (${chunkX}, ${chunkZ})`);
+          console.log(`Buffer size: ${result.buffer.length} bytes`);
+          chunkId = await saveChunk(
+            { x: chunkX, z: chunkZ },
+            result.buffer,
+            {
+              vertices: result.metadata.vertices || 0,
+              faces: result.metadata.faces || 0,
+              sourceImage: file.originalFilename || 'unknown',
+              generatedBy: 'user',
+            }
+          );
+          console.log(`✅ Chunk saved successfully with ID: ${chunkId}`);
+          res.setHeader('X-Chunk-Id', chunkId);
+          res.setHeader('X-Chunk-X', chunkX.toString());
+          res.setHeader('X-Chunk-Z', chunkZ.toString());
+        } catch (error) {
+          console.error('❌ Failed to save chunk to database:', error);
+          console.error('Error details:', error instanceof Error ? error.stack : error);
+          // Continue anyway - send the GLB even if save fails
+        }
+      }
 
       // Set response headers
       if (result.metadata.contentType) {

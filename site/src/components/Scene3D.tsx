@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useGLTF, PointerLockControls } from '@react-three/drei'
+import { useGLTF, PointerLockControls, Html } from '@react-three/drei'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 
@@ -277,7 +277,58 @@ export default function Scene3D({
           toneMappingExposure: 1,
         }}
       >
-        <Suspense fallback={null}>
+        <Suspense
+          fallback={
+            <Html center>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '20px 28px',
+                  background: 'rgba(0, 0, 0, 0.65)',
+                  color: 'white',
+                  borderRadius: '10px',
+                  boxShadow: '0 8px 30px rgba(0,0,0,0.4)',
+                  border: '1px solid rgba(255,255,255,0.12)'
+                }}
+              >
+                <div style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '0.3px' }}>
+                  Materializing new space…
+                </div>
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#cfcfcf' }}>
+                  Loading in assets and geometry
+                </div>
+                <div
+                  style={{
+                    marginTop: '14px',
+                    width: '180px',
+                    height: '4px',
+                    background: 'rgba(255,255,255,0.18)',
+                    borderRadius: '2px',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '50%',
+                      height: '100%',
+                      background: 'linear-gradient(90deg, #7dd3fc, #a78bfa, #f0abfc)',
+                      animation: 'loadingBar 1.4s ease-in-out infinite'
+                    }}
+                  />
+                </div>
+                <style>{`
+                  @keyframes loadingBar {
+                    0% { transform: translateX(-100%); }
+                    100% { transform: translateX(200%); }
+                  }
+                `}</style>
+              </div>
+            </Html>
+          }
+        >
           <SceneModel modelPath={modelPath} rotation={rotation} />
 
           {/* Ambient light for overall illumination */}

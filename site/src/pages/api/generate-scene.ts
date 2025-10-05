@@ -1,17 +1,18 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import fs from 'fs';
-import path from 'path';
 import os from 'os';
 import { imageToGLB } from '@/lib/zoedepth';
 import { makePanoramic } from '@/lib/gemini';
 import { generateRoomPrompt, type RoomContext } from '@/lib/prompts';
+import { saveChunk } from '@/lib/chunkService';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000; // 2 seconds
 
 interface GenerateSceneResponse {
   success: boolean;
-  filename?: string;
+  modelUrl?: string;
+  chunkId?: string;
   error?: string;
   retries?: number;
 }
@@ -59,7 +60,7 @@ async function generateSceneWithRetry(
   y: number,
   userPrompt?: string,
   retryCount: number = 0
-): Promise<{ filename: string; retries: number }> {
+): Promise<{ modelUrl: string; chunkId: string; retries: number }> {
   const tempFiles: string[] = [];
 
   try {
@@ -108,13 +109,19 @@ async function generateSceneWithRetry(
       }
     );
 
-    // Step 3: Save GLB to public folder
-    const filename = `scene-${x}-${y}.glb`;
-    const publicDir = path.join(process.cwd(), 'public');
-    const outputPath = path.join(publicDir, filename);
-
-    fs.writeFileSync(outputPath, glbResult.buffer);
-    console.log(`[generate-scene] GLB saved to:`, outputPath);
+    // Step 3: Upload to S3 and save to MongoDB
+    console.log(`[generate-scene] Uploading to S3 and saving to database...`);
+    const chunkId = await saveChunk(
+      { x, z: y }, // Map y coordinate to z for chunk system
+      glbResult.buffer,
+      {
+        vertices: Number(glbResult.metadata.vertices) || 0,
+        faces: Number(glbResult.metadata.faces) || 0,
+        sourceImage: `generated_panorama_${x}_${y}.jpg`,
+        generatedBy: 'ai',
+      }
+    );
+    console.log(`[generate-scene] ✅ Saved to database with ID:`, chunkId);
 
     // Store room metadata for future continuity
     const roomContext: RoomContext = {
@@ -136,7 +143,12 @@ async function generateSceneWithRetry(
 
     console.log(`[generate-scene] Stored metadata for room (${x}, ${y})`);
 
-    return { filename, retries: retryCount };
+    // Return proxy URL instead of direct S3 URL to avoid CORS issues
+    return {
+      modelUrl: `/api/chunks/${chunkId}/model`,
+      chunkId,
+      retries: retryCount
+    };
 
   } catch (error) {
     console.error(`[generate-scene] Error on attempt ${retryCount + 1}:`, error);
@@ -190,11 +202,12 @@ export default async function handler(
   }
 
   try {
-    const { filename, retries } = await generateSceneWithRetry(x, y, userPrompt);
+    const { modelUrl, chunkId, retries } = await generateSceneWithRetry(x, y, userPrompt);
 
     res.status(200).json({
       success: true,
-      filename,
+      modelUrl,
+      chunkId,
       retries,
     });
   } catch (error) {
