@@ -16,6 +16,7 @@ interface MinimapProps {
 export default function Minimap({ currentPosition, discoveredPositions, onNavigate, cameraRotation }: MinimapProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [direction, setDirection] = useState<'North' | 'East' | 'South' | 'West'>('North')
+  const [headingDegrees, setHeadingDegrees] = useState<number>(0)
 
   useEffect(() => {
     if (!cameraRotation) return
@@ -51,6 +52,7 @@ export default function Minimap({ currentPosition, discoveredPositions, onNaviga
     }
 
     setDirection(cardinal)
+    setHeadingDegrees(degrees)
   }, [cameraRotation])
 
   // Calculate the bounds for a 5x5 grid centered on current position
@@ -191,21 +193,43 @@ export default function Minimap({ currentPosition, discoveredPositions, onNaviga
         {renderGrid()}
       </div>
 
-      {/* Compass */}
-      <div
-        style={{
-          marginTop: '12px',
-          padding: '8px 12px',
-          background: 'rgba(255, 255, 255, 0.1)',
-          borderRadius: '4px',
-          textAlign: 'center',
-        }}
-      >
-        <div style={{ fontSize: '10px', color: '#aaa', marginBottom: '4px' }}>
-          Facing
+      {/* Compass (visual) */}
+      <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ position: 'relative', width: '72px', height: '72px' }}>
+          {/* Compass ring */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '50%',
+              border: '1px solid rgba(255,255,255,0.25)',
+              boxShadow: 'inset 0 0 12px rgba(0,0,0,0.6)'
+            }}
+          />
+          {/* Cardinal labels */}
+          <div style={{ position: 'absolute', top: '-8px', left: '50%', transform: 'translateX(-50%)', fontSize: '9px', color: '#ddd' }}>N</div>
+          <div style={{ position: 'absolute', bottom: '-8px', left: '50%', transform: 'translateX(-50%)', fontSize: '9px', color: '#aaa' }}>S</div>
+          <div style={{ position: 'absolute', left: '-8px', top: '50%', transform: 'translateY(-50%)', fontSize: '9px', color: '#aaa' }}>W</div>
+          <div style={{ position: 'absolute', right: '-8px', top: '50%', transform: 'translateY(-50%)', fontSize: '9px', color: '#aaa' }}>E</div>
+
+          {/* Direction arrow */}
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              width: '2px',
+              height: '26px',
+              background: 'linear-gradient(180deg, #fca5a5, #ef4444)',
+              transformOrigin: 'bottom center',
+              transform: `translate(-50%, -100%) rotate(${headingDegrees}deg)`,
+              borderRadius: '2px'
+            }}
+          />
         </div>
-        <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'white' }}>
-          {direction}
+        <div style={{ display: 'flex', flexDirection: 'column', marginLeft: '10px' }}>
+          <div style={{ fontSize: '10px', color: '#aaa' }}>Facing</div>
+          <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'white' }}>{direction}</div>
         </div>
       </div>
 

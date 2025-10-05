@@ -135,7 +135,7 @@ export async function makePanoramic(
       filePath: outputPath,
       originalPath: inputPath || '',
       width: 2560,
-      height: inputPath ? 1097 : 1280,
+      height: 1097,
     };
 
   } catch (error) {
