@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import * as THREE from 'three'
 
 interface GridPosition {
   x: number
@@ -9,10 +10,48 @@ interface MinimapProps {
   currentPosition: GridPosition
   discoveredPositions: Set<string>
   onNavigate: (position: GridPosition) => void
+  cameraRotation: THREE.Euler | null
 }
 
-export default function Minimap({ currentPosition, discoveredPositions, onNavigate }: MinimapProps) {
+export default function Minimap({ currentPosition, discoveredPositions, onNavigate, cameraRotation }: MinimapProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [direction, setDirection] = useState<'North' | 'East' | 'South' | 'West'>('North')
+
+  useEffect(() => {
+    if (!cameraRotation) return
+
+    // Calculate direction vector based on camera rotation
+    const directionVec = new THREE.Vector3(0, 0, -1)
+    directionVec.applyEuler(cameraRotation)
+
+    // Based on Scene3D boundary detection:
+    // 3D -Z direction → North (grid +Y)
+    // 3D +Z direction → South (grid -Y)
+    // 3D +X direction → East (grid +X)
+    // 3D -X direction → West (grid -X)
+
+    const x = directionVec.x
+    const z = directionVec.z
+
+    // Calculate angle from -Z axis (North)
+    const angle = Math.atan2(x, -z)
+    const degrees = (angle * 180 / Math.PI + 360) % 360
+
+    // Determine cardinal direction
+    let cardinal: 'North' | 'East' | 'South' | 'West'
+
+    if (degrees >= 315 || degrees < 45) {
+      cardinal = 'North'
+    } else if (degrees >= 45 && degrees < 135) {
+      cardinal = 'East'
+    } else if (degrees >= 135 && degrees < 225) {
+      cardinal = 'South'
+    } else {
+      cardinal = 'West'
+    }
+
+    setDirection(cardinal)
+  }, [cameraRotation])
 
   // Calculate the bounds for a 5x5 grid centered on current position
   const getGridBounds = () => {
@@ -150,6 +189,24 @@ export default function Minimap({ currentPosition, discoveredPositions, onNaviga
         }}
       >
         {renderGrid()}
+      </div>
+
+      {/* Compass */}
+      <div
+        style={{
+          marginTop: '12px',
+          padding: '8px 12px',
+          background: 'rgba(255, 255, 255, 0.1)',
+          borderRadius: '4px',
+          textAlign: 'center',
+        }}
+      >
+        <div style={{ fontSize: '10px', color: '#aaa', marginBottom: '4px' }}>
+          Facing
+        </div>
+        <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'white' }}>
+          {direction}
+        </div>
       </div>
 
       {/* Legend */}

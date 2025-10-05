@@ -40,6 +40,7 @@ export default function WorldExplorer() {
   const [isLoading, setIsLoading] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationError, setGenerationError] = useState<string | null>(null)
+  const [cameraRotation, setCameraRotation] = useState<THREE.Euler | null>(null)
   const cameraRotationRef = useRef<THREE.Euler | null>(null)
   const boundaryReachedRef = useRef(false)
   const boundaryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -194,17 +195,19 @@ export default function WorldExplorer() {
 
   const handleCameraRotationChange = (euler: THREE.Euler) => {
     cameraRotationRef.current = euler
+    setCameraRotation(euler.clone())
   }
 
   const currentSceneData = getCurrentSceneData()
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-      {/* Minimap */}
+      {/* Minimap with Compass */}
       <Minimap
         currentPosition={currentPosition}
         discoveredPositions={discoveredPositions}
         onNavigate={moveToPosition}
+        cameraRotation={cameraRotation}
       />
 
       {/* 3D Scene or Placeholder */}
