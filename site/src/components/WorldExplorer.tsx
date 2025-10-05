@@ -38,9 +38,12 @@ export default function WorldExplorer() {
     },
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [generationError, setGenerationError] = useState<string | null>(null)
   const cameraRotationRef = useRef<THREE.Euler | null>(null)
   const boundaryReachedRef = useRef(false)
   const boundaryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const generationQueueRef = useRef<Set<string>>(new Set())
 
   const getPositionKey = (pos: GridPosition): string => `${pos.x},${pos.y}`
 
@@ -53,6 +56,67 @@ export default function WorldExplorer() {
   useEffect(() => {
     const key = getPositionKey(currentPosition)
     setDiscoveredPositions((prev) => new Set(prev).add(key))
+  }, [currentPosition])
+
+  // Generate scene for unmapped positions
+  const generateScene = async (position: GridPosition) => {
+    const key = getPositionKey(position)
+
+    // Check if already in queue or already generated
+    if (generationQueueRef.current.has(key) || worldGrid[key]) {
+      return
+    }
+
+    // Add to queue
+    generationQueueRef.current.add(key)
+    setIsGenerating(true)
+    setGenerationError(null)
+
+    try {
+      console.log(`[WorldExplorer] Generating scene for position (${position.x}, ${position.y})`)
+
+      const response = await fetch('/api/generate-scene', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ x: position.x, y: position.y }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to generate scene')
+      }
+
+      console.log(`[WorldExplorer] Scene generated successfully:`, data.filename)
+
+      // Add to world grid with proper rotation
+      setWorldGrid((prev) => ({
+        ...prev,
+        [key]: {
+          modelPath: `/${data.filename}`,
+          rotation: [Math.PI / 2, 0, 0], // Apply consistent rotation
+        },
+      }))
+
+      setGenerationError(null)
+
+    } catch (error) {
+      console.error('[WorldExplorer] Scene generation failed:', error)
+      setGenerationError(error instanceof Error ? error.message : 'Failed to generate scene')
+    } finally {
+      generationQueueRef.current.delete(key)
+      setIsGenerating(false)
+    }
+  }
+
+  // Trigger generation when entering an unmapped position
+  useEffect(() => {
+    const key = getPositionKey(currentPosition)
+    if (!worldGrid[key] && !generationQueueRef.current.has(key)) {
+      generateScene(currentPosition)
+    }
   }, [currentPosition])
 
   const moveToPosition = (newPosition: GridPosition) => {
@@ -87,6 +151,32 @@ export default function WorldExplorer() {
   const handleBoundaryReached = (direction: 'north' | 'south' | 'east' | 'west') => {
     // Debounce to prevent rapid transitions
     if (boundaryReachedRef.current) return
+
+    // Block transition to unmapped positions during generation
+    const newPos = { ...currentPosition }
+    switch (direction) {
+      case 'north':
+        newPos.y += 1
+        break
+      case 'south':
+        newPos.y -= 1
+        break
+      case 'east':
+        newPos.x += 1
+        break
+      case 'west':
+        newPos.x -= 1
+        break
+    }
+
+    const newKey = getPositionKey(newPos)
+    const isNewPositionMapped = Boolean(worldGrid[newKey])
+
+    // Block if trying to move to another unmapped position while generating
+    if (!isNewPositionMapped && isGenerating) {
+      console.log('[WorldExplorer] Blocked transition to unmapped position during generation')
+      return
+    }
 
     boundaryReachedRef.current = true
 
@@ -143,11 +233,53 @@ export default function WorldExplorer() {
             gap: '20px',
           }}
         >
-          <div style={{ fontSize: '48px' }}>🌌</div>
-          <div style={{ fontSize: '24px', fontWeight: 'bold' }}>Uncharted Territory</div>
-          <div style={{ fontSize: '16px', color: '#aaa', textAlign: 'center', maxWidth: '400px' }}>
-            This location hasn't been generated yet. Soon, a new 3D space will be created here!
-          </div>
+          {generationError ? (
+            <>
+              <div style={{ fontSize: '48px' }}>⚠️</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold' }}>Generation Error</div>
+              <div style={{ fontSize: '16px', color: '#ff6b6b', textAlign: 'center', maxWidth: '400px' }}>
+                {generationError}
+              </div>
+              <div style={{ fontSize: '14px', color: '#aaa', textAlign: 'center', maxWidth: '400px' }}>
+                Please try navigating back and returning to this position.
+              </div>
+            </>
+          ) : isGenerating ? (
+            <>
+              <div style={{ fontSize: '48px', animation: 'pulse 2s ease-in-out infinite' }}>✨</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold' }}>Generating New Space...</div>
+              <div style={{ fontSize: '16px', color: '#aaa', textAlign: 'center', maxWidth: '400px' }}>
+                Creating a unique 3D environment for you. This may take 20-40 seconds.
+              </div>
+              <div
+                style={{
+                  marginTop: '20px',
+                  width: '200px',
+                  height: '4px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  borderRadius: '2px',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #4CAF50, #2196F3)',
+                    animation: 'loading 1.5s ease-in-out infinite',
+                    width: '50%',
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: '48px' }}>🌌</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold' }}>Uncharted Territory</div>
+              <div style={{ fontSize: '16px', color: '#aaa', textAlign: 'center', maxWidth: '400px' }}>
+                This location hasn't been generated yet. Soon, a new 3D space will be created here!
+              </div>
+            </>
+          )}
           <div
             style={{
               fontSize: '14px',
@@ -158,6 +290,16 @@ export default function WorldExplorer() {
           >
             Position: ({currentPosition.x}, {currentPosition.y})
           </div>
+          <style jsx>{`
+            @keyframes pulse {
+              0%, 100% { opacity: 1; }
+              50% { opacity: 0.5; }
+            }
+            @keyframes loading {
+              0% { transform: translateX(-100%); }
+              100% { transform: translateX(200%); }
+            }
+          `}</style>
         </div>
       )}
 
