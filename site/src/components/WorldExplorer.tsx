@@ -44,6 +44,9 @@ export default function WorldExplorer() {
   const [showPromptModal, setShowPromptModal] = useState(false)
   const [userPrompt, setUserPrompt] = useState('')
   const [pendingPosition, setPendingPosition] = useState<GridPosition | null>(null)
+  const [previousPosition, setPreviousPosition] = useState<GridPosition>({ x: 0, y: 0 })
+  const [isTransitioning, setIsTransitioning] = useState(false)
+  const [preloadedScenes, setPreloadedScenes] = useState<Set<string>>(new Set())
   const cameraRotationRef = useRef<THREE.Euler | null>(null)
   const boundaryReachedRef = useRef(false)
   const boundaryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -61,6 +64,34 @@ export default function WorldExplorer() {
     const key = getPositionKey(currentPosition)
     setDiscoveredPositions((prev) => new Set(prev).add(key))
   }, [currentPosition])
+
+  // Preload adjacent scenes for smoother transitions
+  useEffect(() => {
+    const adjacentPositions = [
+      { x: currentPosition.x, y: currentPosition.y + 1 }, // north
+      { x: currentPosition.x, y: currentPosition.y - 1 }, // south
+      { x: currentPosition.x + 1, y: currentPosition.y }, // east
+      { x: currentPosition.x - 1, y: currentPosition.y }, // west
+    ]
+
+    adjacentPositions.forEach((pos) => {
+      const key = getPositionKey(pos)
+      const sceneData = worldGrid[key]
+
+      if (sceneData && !preloadedScenes.has(key)) {
+        // Preload the GLB model
+        const link = document.createElement('link')
+        link.rel = 'prefetch'
+        link.href = sceneData.modelPath
+        link.as = 'fetch'
+        document.head.appendChild(link)
+
+        setPreloadedScenes((prev) => new Set(prev).add(key))
+
+        console.log(`[WorldExplorer] Preloaded scene at (${pos.x}, ${pos.y})`)
+      }
+    })
+  }, [currentPosition, worldGrid, preloadedScenes])
 
   // Generate scene for unmapped positions
   const generateScene = async (position: GridPosition, customPrompt?: string) => {
@@ -133,11 +164,20 @@ export default function WorldExplorer() {
   }, [currentPosition])
 
   const moveToPosition = (newPosition: GridPosition) => {
+    // Start transition
+    setIsTransitioning(true)
     setIsLoading(true)
-    setCurrentPosition(newPosition)
 
-    // Simulate loading time
-    setTimeout(() => setIsLoading(false), 300)
+    // After fade out, change position
+    setTimeout(() => {
+      setCurrentPosition(newPosition)
+      setIsLoading(false)
+    }, 300) // 300ms fade out
+
+    // End transition after fade in
+    setTimeout(() => {
+      setIsTransitioning(false)
+    }, 600) // 300ms fade out + 300ms fade in
   }
 
   const move = (direction: 'north' | 'south' | 'east' | 'west') => {
@@ -163,7 +203,7 @@ export default function WorldExplorer() {
 
   const handleBoundaryReached = (direction: 'north' | 'south' | 'east' | 'west') => {
     // Debounce to prevent rapid transitions
-    if (boundaryReachedRef.current) return
+    if (boundaryReachedRef.current || isTransitioning) return
 
     // Block transition to unmapped positions during generation
     const newPos = { ...currentPosition }
@@ -199,7 +239,7 @@ export default function WorldExplorer() {
 
     boundaryTimeoutRef.current = setTimeout(() => {
       boundaryReachedRef.current = false
-    }, 1000)
+    }, 1200) // Increased to account for transition time
 
     // Transition to the next grid cell
     move(direction)
@@ -232,7 +272,36 @@ export default function WorldExplorer() {
   const currentSceneData = getCurrentSceneData()
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+    <>
+      <style>
+        {`
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+            }
+            to {
+              opacity: 1;
+            }
+          }
+        `}
+      </style>
+      <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+        {/* Transition Fade Overlay */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'black',
+          opacity: isTransitioning ? 1 : 0,
+          transition: 'opacity 300ms ease-in-out',
+          pointerEvents: 'none',
+          zIndex: 1500,
+        }}
+      />
+
       {/* Minimap with Compass */}
       <Minimap
         currentPosition={currentPosition}
@@ -317,11 +386,23 @@ export default function WorldExplorer() {
               style={{
                 display: 'flex',
                 gap: '12px',
-                justifyContent: 'flex-end',
+                justifyContent: 'space-between',
               }}
             >
               <button
-                onClick={handlePromptCancel}
+                onClick={() => {
+                  setShowPromptModal(false)
+                  setPendingPosition(null)
+                  setUserPrompt('')
+                  // Navigate back to a discovered position
+                  const discovered = Array.from(discoveredPositions)
+                  const validPositions = discovered.filter(key => worldGrid[key] && key !== getPositionKey(currentPosition))
+                  if (validPositions.length > 0) {
+                    const lastValid = validPositions[validPositions.length - 1]
+                    const [x, y] = lastValid.split(',').map(Number)
+                    moveToPosition({ x, y })
+                  }
+                }}
                 style={{
                   padding: '12px 24px',
                   fontSize: '16px',
@@ -340,30 +421,54 @@ export default function WorldExplorer() {
                   e.currentTarget.style.background = 'transparent'
                 }}
               >
-                Skip (Random)
+                ← Go Back
               </button>
-              <button
-                onClick={handlePromptSubmit}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '16px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: 'white',
-                  cursor: 'pointer',
-                  fontWeight: '500',
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'scale(1.05)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)'
-                }}
-              >
-                Generate {userPrompt.trim() ? '(Ctrl+Enter)' : ''}
-              </button>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={handlePromptCancel}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '16px',
+                    borderRadius: '8px',
+                    border: '2px solid rgba(255, 255, 255, 0.2)',
+                    background: 'transparent',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontWeight: '500',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent'
+                  }}
+                >
+                  Skip (Random)
+                </button>
+                <button
+                  onClick={handlePromptSubmit}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '16px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontWeight: '500',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'scale(1.05)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)'
+                  }}
+                >
+                  Generate {userPrompt.trim() ? '(Ctrl+Enter)' : ''}
+                </button>
+              </div>
             </div>
             <p
               style={{
@@ -381,16 +486,24 @@ export default function WorldExplorer() {
 
       {/* 3D Scene or Placeholder */}
       {currentSceneData ? (
-        <Scene3D
-          key={getPositionKey(currentPosition)}
-          modelPath={currentSceneData.modelPath}
-          rotation={currentSceneData.rotation}
-          moveSpeed={MOVE_SPEED}
-          maxDistance={MAX_DISTANCE}
-          onBoundaryReached={handleBoundaryReached}
-          initialCameraRotation={cameraRotationRef.current ? { euler: cameraRotationRef.current } : undefined}
-          onCameraRotationChange={handleCameraRotationChange}
-        />
+        <div
+          style={{
+            width: '100vw',
+            height: '100vh',
+            animation: 'fadeIn 400ms ease-in',
+          }}
+        >
+          <Scene3D
+            key={getPositionKey(currentPosition)}
+            modelPath={currentSceneData.modelPath}
+            rotation={currentSceneData.rotation}
+            moveSpeed={MOVE_SPEED}
+            maxDistance={MAX_DISTANCE}
+            onBoundaryReached={handleBoundaryReached}
+            initialCameraRotation={cameraRotationRef.current ? { euler: cameraRotationRef.current } : undefined}
+            onCameraRotationChange={handleCameraRotationChange}
+          />
+        </div>
       ) : (
         <div
           style={{
@@ -442,6 +555,45 @@ export default function WorldExplorer() {
                   }}
                 />
               </div>
+              <button
+                onClick={() => {
+                  // Find the last discovered position that has a scene
+                  const discovered = Array.from(discoveredPositions)
+                  const validPositions = discovered.filter(key => worldGrid[key])
+                  if (validPositions.length > 0) {
+                    // Go to the most recently discovered valid position
+                    const lastValid = validPositions[validPositions.length - 1]
+                    const [x, y] = lastValid.split(',').map(Number)
+                    moveToPosition({ x, y })
+                  }
+                }}
+                style={{
+                  marginTop: '24px',
+                  padding: '12px 32px',
+                  fontSize: '16px',
+                  borderRadius: '8px',
+                  border: '2px solid rgba(255, 255, 255, 0.3)',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  transition: 'all 0.2s',
+                  backdropFilter: 'blur(10px)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+                  e.currentTarget.style.transform = 'scale(1.05)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.transform = 'scale(1)'
+                }}
+              >
+                ← Go Back & Explore
+              </button>
+              <div style={{ fontSize: '14px', color: '#666', marginTop: '12px', textAlign: 'center', maxWidth: '400px' }}>
+                Continue exploring while this space generates in the background
+              </div>
             </>
           ) : (
             <>
@@ -475,27 +627,6 @@ export default function WorldExplorer() {
         </div>
       )}
 
-      {/* Loading Overlay */}
-      {isLoading && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            background: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            fontSize: '24px',
-            zIndex: 1000,
-          }}
-        >
-          Loading...
-        </div>
-      )}
 
       {/* Controls Tooltip */}
       <div
@@ -516,11 +647,13 @@ export default function WorldExplorer() {
         <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>Controls</div>
         <div>• Click to look around</div>
         <div>• WASD to move</div>
+        <div>• Hold Shift to sprint</div>
         <div>• Space to jump</div>
         <div>• Scroll to zoom</div>
         <div>• ESC to unlock cursor</div>
       </div>
 
     </div>
+    </>
   )
 }

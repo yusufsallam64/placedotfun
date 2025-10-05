@@ -27,11 +27,13 @@ interface WASDControlsProps {
 function WASDControls({ moveSpeed = 0.05, maxDistance = 2.5, onBoundaryReached }: WASDControlsProps) {
   const { camera } = useThree()
   const moveState = useRef({ forward: false, backward: false, left: false, right: false })
+  const isSprinting = useRef(false)
   const velocity = useRef(new THREE.Vector3())
   const startPosition = useRef(new THREE.Vector3(0, 1.6, 0.5))
   const isJumping = useRef(false)
   const jumpVelocity = useRef(0)
   const groundHeight = 1.6
+  const sprintMultiplier = 2.0 // Sprint is 2x faster
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -47,6 +49,9 @@ function WASDControls({ moveSpeed = 0.05, maxDistance = 2.5, onBoundaryReached }
           break
         case 'd':
           moveState.current.right = true
+          break
+        case 'shift':
+          isSprinting.current = true
           break
         case ' ':
           // Jump
@@ -73,6 +78,9 @@ function WASDControls({ moveSpeed = 0.05, maxDistance = 2.5, onBoundaryReached }
         case 'd':
           moveState.current.right = false
           break
+        case 'shift':
+          isSprinting.current = false
+          break
       }
     }
 
@@ -97,10 +105,13 @@ function WASDControls({ moveSpeed = 0.05, maxDistance = 2.5, onBoundaryReached }
 
     velocity.current.set(0, 0, 0)
 
-    if (moveState.current.forward) velocity.current.add(direction.multiplyScalar(moveSpeed))
-    if (moveState.current.backward) velocity.current.add(direction.multiplyScalar(-moveSpeed))
-    if (moveState.current.left) velocity.current.add(right.multiplyScalar(moveSpeed))
-    if (moveState.current.right) velocity.current.add(right.multiplyScalar(-moveSpeed))
+    // Apply sprint multiplier if shift is held
+    const currentSpeed = isSprinting.current ? moveSpeed * sprintMultiplier : moveSpeed
+
+    if (moveState.current.forward) velocity.current.add(direction.multiplyScalar(currentSpeed))
+    if (moveState.current.backward) velocity.current.add(direction.multiplyScalar(-currentSpeed))
+    if (moveState.current.left) velocity.current.add(right.multiplyScalar(currentSpeed))
+    if (moveState.current.right) velocity.current.add(right.multiplyScalar(-currentSpeed))
 
     // Handle jump physics
     if (isJumping.current) {
@@ -323,7 +334,7 @@ export default function Scene3D({
           }}
           id="click-instruction"
         >
-          Click to look around • WASD to move • SPACE to jump • Scroll to zoom
+          Click to look around • WASD to move • Hold SHIFT to sprint • SPACE to jump • Scroll to zoom
         </div>
       )}
     </div>
