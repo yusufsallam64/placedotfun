@@ -88,8 +88,8 @@ export default async function handler(
           maxResolution: 2048,
           smoothDepth: true,
           smoothSigma: 0.5,
-          removeEdges: true,
-          edgeThreshold: 0.03,
+          removeEdges: false,  // Disabled - was causing missing chunks
+          edgeThreshold: 0.15,
         }
       );
 

@@ -35,8 +35,8 @@ export async function imageToGLB(
     maxResolution = 2048,
     smoothDepth = true,
     smoothSigma = 0.5,
-    removeEdges = true,
-    edgeThreshold = 0.03,
+    removeEdges = false,  // Disabled - was causing missing chunks in mesh
+    edgeThreshold = 0.15,  // Increased from 0.03 - less aggressive if enabled
   } = options;
 
   console.log('imageToGLB called with:', { filePath, filename, mimetype, options });
