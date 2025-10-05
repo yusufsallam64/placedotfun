@@ -9,8 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.3.0",
+    "@types/formidable": "^3.4.5",
+    "axios": "^1.12.2",
+    "form-data": "^4.0.4",
+    "formidable": "^3.5.4",
     "next": "15.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
