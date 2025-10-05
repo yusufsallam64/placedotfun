@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Scene3D from './Scene3D'
+import Minimap from './Minimap'
+import * as THREE from 'three'
 
 interface GridPosition {
   x: number
@@ -15,8 +17,12 @@ interface WorldGrid {
   [key: string]: SceneData // key format: "x,y" -> SceneData
 }
 
+const MOVE_SPEED = 0.05 // Configurable movement speed
+const MAX_DISTANCE = 2.5 // Configurable boundary distance
+
 export default function WorldExplorer() {
   const [currentPosition, setCurrentPosition] = useState<GridPosition>({ x: 0, y: 0 })
+  const [discoveredPositions, setDiscoveredPositions] = useState<Set<string>>(new Set(['0,0']))
   const [worldGrid, setWorldGrid] = useState<WorldGrid>({
     '0,0': {
       modelPath: '/scene-0-0.glb',
@@ -32,6 +38,9 @@ export default function WorldExplorer() {
     },
   })
   const [isLoading, setIsLoading] = useState(false)
+  const cameraRotationRef = useRef<THREE.Euler | null>(null)
+  const boundaryReachedRef = useRef(false)
+  const boundaryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const getPositionKey = (pos: GridPosition): string => `${pos.x},${pos.y}`
 
@@ -39,6 +48,12 @@ export default function WorldExplorer() {
     const key = getPositionKey(currentPosition)
     return worldGrid[key] || null
   }
+
+  // Mark current position as discovered whenever it changes
+  useEffect(() => {
+    const key = getPositionKey(currentPosition)
+    setDiscoveredPositions((prev) => new Set(prev).add(key))
+  }, [currentPosition])
 
   const moveToPosition = (newPosition: GridPosition) => {
     setIsLoading(true)
@@ -69,16 +84,50 @@ export default function WorldExplorer() {
     moveToPosition(newPos)
   }
 
+  const handleBoundaryReached = (direction: 'north' | 'south' | 'east' | 'west') => {
+    // Debounce to prevent rapid transitions
+    if (boundaryReachedRef.current) return
+
+    boundaryReachedRef.current = true
+
+    if (boundaryTimeoutRef.current) {
+      clearTimeout(boundaryTimeoutRef.current)
+    }
+
+    boundaryTimeoutRef.current = setTimeout(() => {
+      boundaryReachedRef.current = false
+    }, 1000)
+
+    // Transition to the next grid cell
+    move(direction)
+  }
+
+  const handleCameraRotationChange = (euler: THREE.Euler) => {
+    cameraRotationRef.current = euler
+  }
+
   const currentSceneData = getCurrentSceneData()
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+      {/* Minimap */}
+      <Minimap
+        currentPosition={currentPosition}
+        discoveredPositions={discoveredPositions}
+        onNavigate={moveToPosition}
+      />
+
       {/* 3D Scene or Placeholder */}
       {currentSceneData ? (
         <Scene3D
           key={getPositionKey(currentPosition)}
           modelPath={currentSceneData.modelPath}
           rotation={currentSceneData.rotation}
+          moveSpeed={MOVE_SPEED}
+          maxDistance={MAX_DISTANCE}
+          onBoundaryReached={handleBoundaryReached}
+          initialCameraRotation={cameraRotationRef.current ? { euler: cameraRotationRef.current } : undefined}
+          onCameraRotationChange={handleCameraRotationChange}
         />
       ) : (
         <div
@@ -134,117 +183,30 @@ export default function WorldExplorer() {
         </div>
       )}
 
-      {/* Navigation UI */}
+      {/* Controls Tooltip */}
       <div
         style={{
           position: 'absolute',
-          bottom: '40px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '10px',
+          bottom: '20px',
+          right: '20px',
+          background: 'rgba(0, 0, 0, 0.8)',
+          color: 'white',
+          padding: '12px 16px',
+          borderRadius: '8px',
+          fontSize: '13px',
+          lineHeight: '1.6',
           zIndex: 100,
+          fontFamily: 'monospace',
         }}
       >
-        {/* North Button */}
-        <button
-          onClick={() => move('north')}
-          disabled={isLoading}
-          style={{
-            padding: '12px 24px',
-            fontSize: '16px',
-            cursor: isLoading ? 'not-allowed' : 'pointer',
-            background: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontWeight: 'bold',
-            opacity: isLoading ? 0.5 : 1,
-          }}
-        >
-          ↑ North
-        </button>
-
-        {/* East and West Buttons */}
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button
-            onClick={() => move('west')}
-            disabled={isLoading}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              background: '#4CAF50',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 'bold',
-              opacity: isLoading ? 0.5 : 1,
-            }}
-          >
-            ← West
-          </button>
-
-          <button
-            onClick={() => move('east')}
-            disabled={isLoading}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              background: '#4CAF50',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 'bold',
-              opacity: isLoading ? 0.5 : 1,
-            }}
-          >
-            East →
-          </button>
-        </div>
-
-        {/* South Button */}
-        <button
-          onClick={() => move('south')}
-          disabled={isLoading}
-          style={{
-            padding: '12px 24px',
-            fontSize: '16px',
-            cursor: isLoading ? 'not-allowed' : 'pointer',
-            background: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontWeight: 'bold',
-            opacity: isLoading ? 0.5 : 1,
-          }}
-        >
-          ↓ South
-        </button>
+        <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>Controls</div>
+        <div>• Click to look around</div>
+        <div>• WASD to move</div>
+        <div>• Space to jump</div>
+        <div>• Scroll to zoom</div>
+        <div>• ESC to unlock cursor</div>
       </div>
 
-      {/* Position Display - only show when in a 3D scene */}
-      {currentSceneData && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '20px',
-            left: '20px',
-            background: 'rgba(0, 0, 0, 0.7)',
-            color: 'white',
-            padding: '12px 20px',
-            borderRadius: '8px',
-            fontSize: '16px',
-            fontFamily: 'monospace',
-            zIndex: 100,
-          }}
-        >
-          Position: ({currentPosition.x}, {currentPosition.y})
-        </div>
-      )}
     </div>
   )
 }
