@@ -1,0 +1,29 @@
+# Virtual environment
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Model cache
+.cache/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Outputs (don't track generated files)
+outputs/*
+!outputs/.gitkeep
+
+# Inputs (don't track input images, user provides their own)
+inputs/*
+!inputs/.gitkeep
+
+# ZoeDepth core - ignore all contents
+zoedepth/
+inputs/
+outputs/
