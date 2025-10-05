@@ -36,14 +36,15 @@ export default async function handler(
 
     const type = req.query.type as string || 'depth';
     const usePanorama = req.query.panorama === 'true';
+    const userPrompt = req.query.prompt as string || '';
 
     if (type === 'panorama') {
       // Panorama Conversion Only
-      console.log('Converting to panoramic...');
+      console.log('Converting to panoramic...', userPrompt ? `with custom prompt: "${userPrompt}"` : '');
       const tempDir = os.tmpdir();
       
       try {
-        const panoramicResult = await makePanoramic(file.filepath, tempDir);
+        const panoramicResult = await makePanoramic(file.filepath, tempDir, userPrompt);
         tempFiles.push(panoramicResult.filePath);
         
         // Read the panoramic image
@@ -65,11 +66,11 @@ export default async function handler(
 
       // If panorama flag is true, convert to panoramic first
       if (usePanorama) {
-        console.log('Converting to panoramic...');
+        console.log('Converting to panoramic...', userPrompt ? `with custom prompt: "${userPrompt}"` : '');
         const tempDir = os.tmpdir();
         
         try {
-          const panoramicResult = await makePanoramic(file.filepath, tempDir);
+          const panoramicResult = await makePanoramic(file.filepath, tempDir, userPrompt);
           processPath = panoramicResult.filePath;
           tempFiles.push(processPath);
           console.log('Panoramic conversion complete');

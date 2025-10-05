@@ -9,6 +9,7 @@ export default function DepthPage() {
   const [error, setError] = useState<string>('');
   const [processingType, setProcessingType] = useState<'depth' | '3d' | 'panorama'>('3d');
   const [usePanoramaAI, setUsePanoramaAI] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -83,7 +84,12 @@ export default function DepthPage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('/api/space?type=panorama', {
+      const params = new URLSearchParams({
+        type: 'panorama',
+        ...(customPrompt && { prompt: customPrompt }),
+      });
+
+      const response = await fetch(`/api/space?${params}`, {
         method: 'POST',
         body: formData,
       });
@@ -122,6 +128,7 @@ export default function DepthPage() {
       const params = new URLSearchParams({
         type: '3d',
         panorama: usePanoramaAI.toString(),
+        ...(usePanoramaAI && customPrompt && { prompt: customPrompt }),
       });
 
       const response = await fetch(`/api/space?${params}`, {
@@ -225,23 +232,64 @@ export default function DepthPage() {
               </div>
               
               {processingType === '3d' && (
-                <div className="mt-4 flex items-center gap-3 p-3 bg-gray-700 rounded-lg">
-                  <input
-                    type="checkbox"
-                    id="panoramaAI"
-                    checked={usePanoramaAI}
-                    onChange={(e) => setUsePanoramaAI(e.target.checked)}
-                    className="w-5 h-5 rounded border-gray-600 text-purple-600 focus:ring-purple-500 focus:ring-offset-gray-800"
-                  />
-                  <label htmlFor="panoramaAI" className="text-sm cursor-pointer">
-                    <span className="font-medium">Use Gemini AI to make image panoramic</span>
-                    <span className="block text-xs text-gray-400 mt-1">
-                      Converts regular photos to 360° before 3D creation (slower but better quality)
-                    </span>
-                  </label>
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center gap-3 p-3 bg-gray-700 rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="panoramaAI"
+                      checked={usePanoramaAI}
+                      onChange={(e) => setUsePanoramaAI(e.target.checked)}
+                      className="w-5 h-5 rounded border-gray-600 text-purple-600 focus:ring-purple-500 focus:ring-offset-gray-800"
+                    />
+                    <label htmlFor="panoramaAI" className="text-sm cursor-pointer">
+                      <span className="font-medium">Use Gemini AI to make image panoramic</span>
+                      <span className="block text-xs text-gray-400 mt-1">
+                        Converts regular photos to 360° before 3D creation (slower but better quality)
+                      </span>
+                    </label>
+                  </div>
+                  
+                  {usePanoramaAI && (
+                    <div className="p-3 bg-gray-700 rounded-lg">
+                      <label htmlFor="customPrompt" className="block text-sm font-medium mb-2">
+                        Custom Instructions (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        id="customPrompt"
+                        value={customPrompt}
+                        onChange={(e) => setCustomPrompt(e.target.value)}
+                        placeholder="e.g., make it more dramatic, add sunset lighting..."
+                        className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        Add specific instructions for the AI panorama generation
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+
+            {/* Custom Prompt for Panorama Type */}
+            {processingType === 'panorama' && (
+              <div className="mb-6 p-4 bg-gray-700 rounded-lg">
+                <label htmlFor="panoramaPrompt" className="block text-sm font-medium mb-2">
+                  Custom Instructions (Optional)
+                </label>
+                <input
+                  type="text"
+                  id="panoramaPrompt"
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  placeholder="e.g., make it more vibrant, add sunset colors, make it dramatic..."
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Add specific instructions to customize the AI panorama generation
+                </p>
+              </div>
+            )}
 
             {/* File Upload */}
             <div className="mb-8">

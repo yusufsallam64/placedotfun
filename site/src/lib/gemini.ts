@@ -18,7 +18,8 @@ export interface PanoramicConversionResult {
  */
 export async function makePanoramic(
   inputPath: string,
-  outputDir: string
+  outputDir: string,
+  userPrompt?: string
 ): Promise<PanoramicConversionResult> {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY not set in environment variables');
@@ -36,7 +37,13 @@ export async function makePanoramic(
     console.log('[makePanoramic] Generating panoramic image...');
     
     // Simple, direct prompt with image
-    const prompt = 'Generate a seamless spherical panoramic image from this. Preserve lighting and elements from this image.';
+    let prompt = 'Generate a seamless spherical panoramic image from this. Preserve lighting and elements from this image.';
+    
+    // Add user's custom prompt if provided
+    if (userPrompt && userPrompt.trim()) {
+      prompt += ` ${userPrompt.trim()}`;
+      console.log('[makePanoramic] User prompt added:', userPrompt);
+    }
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image-preview',
