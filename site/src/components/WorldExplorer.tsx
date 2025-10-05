@@ -41,6 +41,9 @@ export default function WorldExplorer() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [cameraRotation, setCameraRotation] = useState<THREE.Euler | null>(null)
+  const [showPromptModal, setShowPromptModal] = useState(false)
+  const [userPrompt, setUserPrompt] = useState('')
+  const [pendingPosition, setPendingPosition] = useState<GridPosition | null>(null)
   const cameraRotationRef = useRef<THREE.Euler | null>(null)
   const boundaryReachedRef = useRef(false)
   const boundaryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -60,7 +63,7 @@ export default function WorldExplorer() {
   }, [currentPosition])
 
   // Generate scene for unmapped positions
-  const generateScene = async (position: GridPosition) => {
+  const generateScene = async (position: GridPosition, customPrompt?: string) => {
     const key = getPositionKey(position)
 
     // Check if already in queue or already generated
@@ -75,13 +78,20 @@ export default function WorldExplorer() {
 
     try {
       console.log(`[WorldExplorer] Generating scene for position (${position.x}, ${position.y})`)
+      if (customPrompt) {
+        console.log(`[WorldExplorer] With custom prompt: "${customPrompt}"`)
+      }
 
       const response = await fetch('/api/generate-scene', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ x: position.x, y: position.y }),
+        body: JSON.stringify({
+          x: position.x,
+          y: position.y,
+          userPrompt: customPrompt || undefined,
+        }),
       })
 
       const data = await response.json()
@@ -112,11 +122,13 @@ export default function WorldExplorer() {
     }
   }
 
-  // Trigger generation when entering an unmapped position
+  // Trigger prompt modal when entering an unmapped position
   useEffect(() => {
     const key = getPositionKey(currentPosition)
     if (!worldGrid[key] && !generationQueueRef.current.has(key)) {
-      generateScene(currentPosition)
+      // Show prompt modal to let user customize the scene
+      setPendingPosition(currentPosition)
+      setShowPromptModal(true)
     }
   }, [currentPosition])
 
@@ -198,6 +210,25 @@ export default function WorldExplorer() {
     setCameraRotation(euler.clone())
   }
 
+  const handlePromptSubmit = () => {
+    if (pendingPosition) {
+      setShowPromptModal(false)
+      generateScene(pendingPosition, userPrompt.trim() || undefined)
+      setPendingPosition(null)
+      setUserPrompt('')
+    }
+  }
+
+  const handlePromptCancel = () => {
+    setShowPromptModal(false)
+    if (pendingPosition) {
+      // Generate with no custom prompt
+      generateScene(pendingPosition)
+      setPendingPosition(null)
+    }
+    setUserPrompt('')
+  }
+
   const currentSceneData = getCurrentSceneData()
 
   return (
@@ -209,6 +240,144 @@ export default function WorldExplorer() {
         onNavigate={moveToPosition}
         cameraRotation={cameraRotation}
       />
+
+      {/* Prompt Modal */}
+      {showPromptModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <div
+            style={{
+              background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+              padding: '40px',
+              borderRadius: '16px',
+              maxWidth: '600px',
+              width: '90%',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            }}
+          >
+            <h2
+              style={{
+                margin: '0 0 12px 0',
+                fontSize: '28px',
+                fontWeight: 'bold',
+                color: 'white',
+              }}
+            >
+              Create Your Space ✨
+            </h2>
+            <p
+              style={{
+                margin: '0 0 24px 0',
+                fontSize: '16px',
+                color: '#aaa',
+                lineHeight: '1.6',
+              }}
+            >
+              Describe the room you'd like to generate. Be creative! Your description will influence the 3D environment that gets created.
+            </p>
+            <textarea
+              value={userPrompt}
+              onChange={(e) => setUserPrompt(e.target.value)}
+              placeholder="e.g., a cozy library with warm lighting and bookshelves, a futuristic space station, a serene Japanese garden..."
+              style={{
+                width: '100%',
+                minHeight: '120px',
+                padding: '16px',
+                fontSize: '16px',
+                borderRadius: '8px',
+                border: '2px solid rgba(255, 255, 255, 0.2)',
+                background: 'rgba(0, 0, 0, 0.3)',
+                color: 'white',
+                resize: 'vertical',
+                fontFamily: 'inherit',
+                marginBottom: '24px',
+              }}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.ctrlKey) {
+                  handlePromptSubmit()
+                }
+              }}
+            />
+            <div
+              style={{
+                display: 'flex',
+                gap: '12px',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <button
+                onClick={handlePromptCancel}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '16px',
+                  borderRadius: '8px',
+                  border: '2px solid rgba(255, 255, 255, 0.2)',
+                  background: 'transparent',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent'
+                }}
+              >
+                Skip (Random)
+              </button>
+              <button
+                onClick={handlePromptSubmit}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'scale(1.05)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)'
+                }}
+              >
+                Generate {userPrompt.trim() ? '(Ctrl+Enter)' : ''}
+              </button>
+            </div>
+            <p
+              style={{
+                margin: '16px 0 0 0',
+                fontSize: '13px',
+                color: '#666',
+                textAlign: 'center',
+              }}
+            >
+              Tip: Press Ctrl+Enter to generate quickly
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 3D Scene or Placeholder */}
       {currentSceneData ? (

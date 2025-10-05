@@ -57,6 +57,7 @@ async function delay(ms: number) {
 async function generateSceneWithRetry(
   x: number,
   y: number,
+  userPrompt?: string,
   retryCount: number = 0
 ): Promise<{ filename: string; retries: number }> {
   const tempFiles: string[] = [];
@@ -73,8 +74,16 @@ async function generateSceneWithRetry(
     }
 
     // Generate varied prompt for Gemini with optional continuity
-    const prompt = generateRoomPrompt(previousContext);
-    console.log(`[generate-scene] Generated prompt:`, prompt);
+    let prompt = generateRoomPrompt(previousContext);
+
+    // If user provided a custom prompt, integrate it
+    if (userPrompt && userPrompt.trim()) {
+      console.log(`[generate-scene] User custom prompt: "${userPrompt}"`);
+      // Combine the structured prompt with user's creative input
+      prompt = `Generate a wide 16:9 aspect ratio seamless spherical panoramic image (360° equirectangular format). ${userPrompt.trim()}. Ensure the image wraps seamlessly at the edges for a continuous 360° view.`;
+    }
+
+    console.log(`[generate-scene] Final prompt:`, prompt);
 
     // Step 1: Generate panorama from Gemini
     const tempDir = os.tmpdir();
@@ -136,7 +145,7 @@ async function generateSceneWithRetry(
     if (retryCount < MAX_RETRIES - 1) {
       console.log(`[generate-scene] Retrying in ${RETRY_DELAY}ms...`);
       await delay(RETRY_DELAY);
-      return generateSceneWithRetry(x, y, retryCount + 1);
+      return generateSceneWithRetry(x, y, userPrompt, retryCount + 1);
     }
 
     throw error;
@@ -162,7 +171,7 @@ export default async function handler(
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  const { x, y } = req.body;
+  const { x, y, userPrompt } = req.body;
 
   // Validate coordinates
   if (typeof x !== 'number' || typeof y !== 'number') {
@@ -172,8 +181,16 @@ export default async function handler(
     });
   }
 
+  // Validate userPrompt if provided
+  if (userPrompt !== undefined && typeof userPrompt !== 'string') {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid userPrompt. Must be a string.',
+    });
+  }
+
   try {
-    const { filename, retries } = await generateSceneWithRetry(x, y);
+    const { filename, retries } = await generateSceneWithRetry(x, y, userPrompt);
 
     res.status(200).json({
       success: true,
