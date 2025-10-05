@@ -4,7 +4,7 @@ import path from 'path';
 import os from 'os';
 import { imageToGLB } from '@/lib/zoedepth';
 import { makePanoramic } from '@/lib/gemini';
-import { generateRoomPrompt } from '@/lib/prompts';
+import { generateRoomPrompt, type RoomContext } from '@/lib/prompts';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000; // 2 seconds
@@ -14,6 +14,40 @@ interface GenerateSceneResponse {
   filename?: string;
   error?: string;
   retries?: number;
+}
+
+interface RoomMetadata {
+  x: number;
+  y: number;
+  context: RoomContext;
+  prompt: string;
+}
+
+// Store room metadata in memory (could be persisted to file/db for production)
+const roomMetadataStore = new Map<string, RoomMetadata>();
+
+function getRoomKey(x: number, y: number): string {
+  return `${x},${y}`;
+}
+
+function getPreviousRoomContext(x: number, y: number): RoomContext | undefined {
+  // Check adjacent rooms (prioritize the one the user likely came from)
+  const adjacentPositions = [
+    { x: x - 1, y }, // left
+    { x: x + 1, y }, // right
+    { x, y: y - 1 }, // down
+    { x, y: y + 1 }, // up
+  ];
+
+  // Find the first adjacent room that exists
+  for (const pos of adjacentPositions) {
+    const metadata = roomMetadataStore.get(getRoomKey(pos.x, pos.y));
+    if (metadata) {
+      return metadata.context;
+    }
+  }
+
+  return undefined;
 }
 
 async function delay(ms: number) {
@@ -30,8 +64,16 @@ async function generateSceneWithRetry(
   try {
     console.log(`[generate-scene] Starting generation for position (${x}, ${y}), attempt ${retryCount + 1}`);
 
-    // Generate varied prompt for Gemini
-    const prompt = generateRoomPrompt();
+    // Get context from adjacent rooms for continuity
+    const previousContext = getPreviousRoomContext(x, y);
+    if (previousContext) {
+      console.log(`[generate-scene] Found previous room context, maintaining continuity`);
+    } else {
+      console.log(`[generate-scene] No previous context, generating fresh room`);
+    }
+
+    // Generate varied prompt for Gemini with optional continuity
+    const prompt = generateRoomPrompt(previousContext);
     console.log(`[generate-scene] Generated prompt:`, prompt);
 
     // Step 1: Generate panorama from Gemini
@@ -64,6 +106,26 @@ async function generateSceneWithRetry(
 
     fs.writeFileSync(outputPath, glbResult.buffer);
     console.log(`[generate-scene] GLB saved to:`, outputPath);
+
+    // Store room metadata for future continuity
+    const roomContext: RoomContext = {
+      theme: prompt.includes('living room') ? 'living room' :
+             prompt.includes('bedroom') ? 'bedroom' :
+             prompt.includes('kitchen') ? 'kitchen' : 'generic room',
+      atmosphere: prompt.includes('warm') ? 'warm' :
+                  prompt.includes('bright') ? 'bright' : 'ambient',
+      style: 'photorealistic',
+      description: prompt,
+    };
+
+    roomMetadataStore.set(getRoomKey(x, y), {
+      x,
+      y,
+      context: roomContext,
+      prompt,
+    });
+
+    console.log(`[generate-scene] Stored metadata for room (${x}, ${y})`);
 
     return { filename, retries: retryCount };
 

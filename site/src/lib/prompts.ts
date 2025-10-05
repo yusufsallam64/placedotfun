@@ -55,15 +55,57 @@ const styleModifiers = [
   'with balanced composition',
 ];
 
-export function generateRoomPrompt(): string {
-  const theme = roomThemes[Math.floor(Math.random() * roomThemes.length)];
-  const atmosphere = atmosphereModifiers[Math.floor(Math.random() * atmosphereModifiers.length)];
-  const style = styleModifiers[Math.floor(Math.random() * styleModifiers.length)];
+export interface RoomContext {
+  theme: string;
+  atmosphere: string;
+  style: string;
+  description?: string;
+}
 
-  // Core panoramic prompt that must be preserved for format consistency
-  const panoramicFormat = 'Generate a seamless spherical panoramic image (360° equirectangular format).';
+export function generateRoomPrompt(previousContext?: RoomContext): string {
+  // 20% chance of drastic change, otherwise maintain continuity
+  const drasticChange = Math.random() < 0.2;
 
-  return `${panoramicFormat} ${theme}, ${atmosphere}, ${style}. Ensure the image wraps seamlessly at the edges for a continuous 360° view.`;
+  let theme: string;
+  let atmosphere: string;
+  let style: string;
+  let continuityPrompt = '';
+
+  if (previousContext && !drasticChange) {
+    // Maintain some continuity from previous room
+    theme = roomThemes[Math.floor(Math.random() * roomThemes.length)];
+    atmosphere = atmosphereModifiers[Math.floor(Math.random() * atmosphereModifiers.length)];
+    style = styleModifiers[Math.floor(Math.random() * styleModifiers.length)];
+
+    // Add continuity element - reference previous room with connecting element
+    const connectingElements = [
+      'with a doorway showing hints of the previous space',
+      'with decorative elements reminiscent of the previous room',
+      'connected by a subtle architectural transition',
+      'with color echoes from the adjoining area',
+      'featuring a similar material palette as a bridge',
+      'with a subtle visual connection to the previous environment'
+    ];
+    continuityPrompt = connectingElements[Math.floor(Math.random() * connectingElements.length)];
+  } else {
+    // Fresh start or drastic change
+    theme = roomThemes[Math.floor(Math.random() * roomThemes.length)];
+    atmosphere = atmosphereModifiers[Math.floor(Math.random() * atmosphereModifiers.length)];
+    style = styleModifiers[Math.floor(Math.random() * styleModifiers.length)];
+  }
+
+  // Core panoramic prompt with 16:9 aspect ratio specification
+  const panoramicFormat = 'Generate a wide 16:9 aspect ratio seamless spherical panoramic image (360° equirectangular format).';
+
+  const fullPrompt = continuityPrompt
+    ? `${panoramicFormat} ${theme}, ${atmosphere}, ${style}, ${continuityPrompt}. Ensure the image wraps seamlessly at the edges for a continuous 360° view.`
+    : `${panoramicFormat} ${theme}, ${atmosphere}, ${style}. Ensure the image wraps seamlessly at the edges for a continuous 360° view.`;
+
+  return fullPrompt;
+}
+
+export function createRoomContext(theme: string, atmosphere: string, style: string, description?: string): RoomContext {
+  return { theme, atmosphere, style, description };
 }
 
 export function generateSceneDescription(): string {
